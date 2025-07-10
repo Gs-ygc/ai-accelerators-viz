@@ -47,7 +47,7 @@
 <body>
     <div id="plot-container">
         <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-6">
-            Peak Performance vs. Power of Hardware for AI
+            Peak Performance vs. Power of Hardware for AI <a id="repo_link"> </a>
         </h1>
         <div id="loading-message" class="text-gray-600">Loading data and generating plot...</div>
         <div id="plot" class="hidden"></div> <!-- Plotly plot will be rendered here -->
@@ -55,9 +55,23 @@
 
     <script>
         // Define the GitHub repository details and file paths
-        const GITHUB_REPO_OWNER = 'mandulaj';
-        const GITHUB_REPO_NAME = 'ai-accelerators-viz';
+        // Extract GitHub repo info from github.io URL if present, otherwise use defaults
+        let GITHUB_REPO_OWNER = 'mandulaj';
+        let GITHUB_REPO_NAME = 'ai-accelerators-viz';
         const GITHUB_BRANCH = 'main';
+
+        // If hosted on github.io, try to extract owner/repo from the URL
+        const githubIoMatch = window.location.hostname.match(/^([^.]+)\.github\.io$/);
+        if (githubIoMatch) {
+            GITHUB_REPO_OWNER = githubIoMatch[1];
+            // Try to extract repo name from pathname (e.g. /repo-name/)
+            const repoMatch = window.location.pathname.match(/^\/([^\/]+)\//);
+            if (repoMatch) {
+            GITHUB_REPO_NAME = repoMatch[1];
+            }
+        }
+
+        //
 
         const fileNames = [
             'peak_accelerators_ieee_hpec_2019.csv',
@@ -71,6 +85,12 @@
         const filePaths = fileNames.map(name =>
             `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/${GITHUB_BRANCH}/${name}`
         );
+
+        // Generrate the repository link
+        const repoUrl = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
+        const repoLinkText = `View the repository on GitHub`;
+        const repoLink = document.getElementById('repo_link');
+        repoLink.innerHTML = `- <a href="${repoUrl}" class="text-blue-600 hover:underline" target="_blank">${repoLinkText}</a>`;
 
         // Function to categorize technologies
         function categorizeTechnology(tech) {
