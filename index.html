@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware Performance vs. Power</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js CDN for interactive plotting -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <!-- D3.js for CSV parsing (includes d3-dsv functionality) -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* Custom styles for better aesthetics and responsiveness */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        #plot-container {
+            background-color: #ffffff;
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 2000px; /* Max width for larger screens */
+            box-sizing: border-box;
+        }
+        #loading-message {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.25rem;
+            color: #4a5568;
+        }
+        /* Ensure plotly div takes available space */
+        #plot {
+            width: 100%;
+            height: 1100px; /* Fixed height for the plot */
+        }
+    </style>
+</head>
+<body>
+    <div id="plot-container">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-6">
+            Peak Performance vs. Power of Hardware for AI
+        </h1>
+        <div id="loading-message" class="text-gray-600">Loading data and generating plot...</div>
+        <div id="plot" class="hidden"></div> <!-- Plotly plot will be rendered here -->
+    </div>
+
+    <script>
+        // Define the GitHub repository details and file paths
+        const GITHUB_REPO_OWNER = 'mandulaj';
+        const GITHUB_REPO_NAME = 'ai-accelerators-viz';
+        const GITHUB_BRANCH = 'main';
+
+        const fileNames = [
+            'peak_accelerators_ieee_hpec_2019.csv',
+            'peak_accelerators_ieee_hpec_2020.csv',
+            'peak_accelerators_ieee_hpec_2021.csv',
+            'peak_accelerators_ieee_hpec_2022.csv',
+            'peak_accelerators_ieee_hpec_2023.csv'
+        ];
+
+        // Construct raw GitHub URLs for each file
+        const filePaths = fileNames.map(name =>
+            `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/${GITHUB_BRANCH}/${name}`
+        );
+
+        // Function to categorize technologies
+        function categorizeTechnology(tech) {
+            if (tech === null || tech === undefined || tech.trim() === '') {
+                return null; // Return null for missing or empty values
+            }
+            const lowerTech = tech.toLowerCase();
+            if (lowerTech.includes('cpu') || lowerTech.includes('multicore') || lowerTech.includes('manycore')) {
+                return 'CPU';
+            } else if (lowerTech.includes('gpu')) {
+                return 'GPU';
+            } else if (lowerTech.includes('dataflow')) {
+                return 'dataflow';
+            } else {
+                return 'Others';
+            }
+        }
+
+        // Function to fetch and process all CSV files
+        async function loadAndProcessData() {
+            try {
+                const allData = [];
+                for (const path of filePaths) {
+                    const response = await fetch(path);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status} for ${path}`);
+                    }
+                    const csvText = await response.text();
+                    const parsedData = d3.csvParse(csvText);
+                    allData.push(...parsedData);
+                }
+
+                // Process the concatenated data
+                const processedData = allData.map(row => {
+                    // Ensure 'Power' and 'PeakPerformance' are numbers
+                    const power = parseFloat(row.Power);
+                    const peakPerformance = parseFloat(row.PeakPerformance);
+
+                    return {
+                        ...row,
+                        Power: isNaN(power) ? null : power,
+                        PeakPerformance: isNaN(peakPerformance) ? null : peakPerformance,
+                        TechnologyCategory: categorizeTechnology(row.Technology)
+                    };
+                }).filter(row =>
+                    row.PeakPerformance !== null && row.Power !== null && row.PeakPerformance > 1000
+                );
+
+                return processedData;
+
+            } catch (error) {
+                console.error("Error loading or processing data:", error);
+                document.getElementById('loading-message').innerText = 'Failed to load data. Please check console for details.';
+                return []; // Return empty array on error
+            }
+        }
+
+        // Function to create and render the Plotly chart
+        async function createPlot() {
+            const loadingMessage = document.getElementById('loading-message');
+            const plotDiv = document.getElementById('plot');
+
+            const dataFiltered = await loadAndProcessData();
+
+            if (dataFiltered.length === 0) {
+                loadingMessage.innerText = 'No data available to plot after filtering.';
+                return;
+            }
+
+            // Calculate min/max for axes based on data points
+            const allPowers = dataFiltered.map(d => d.Power).filter(p => p !== null);
+            const allPerformances = dataFiltered.map(d => d.PeakPerformance).filter(p => p !== null);
+
+            const minPower = Math.min(...allPowers);
+            const maxPower = Math.max(...allPowers);
+            const minPerformance = Math.min(...allPerformances);
+            const maxPerformance = Math.max(...allPerformances);
+
+            // Define a small padding for log scale axes
+            const logPadding = 0.1; // 10% padding on each side in log space
+
+            const xMin = Math.log10(minPower) - logPadding;
+            const xMax = Math.log10(maxPower) + logPadding;
+            const yMin = Math.log10(minPerformance) - logPadding;
+            const yMax = Math.log10(maxPerformance) + logPadding;
+
+
+            // Define colors for categories
+            const categoryColors = {
+                'CPU': 'rgb(66, 135, 245)',    // Blue
+                'GPU': 'rgb(52, 199, 89)',    // Green
+                'dataflow': 'rgb(255, 140, 0)', // Orange
+                'Others': 'rgb(220, 53, 69)'   // Red
+            };
+
+            const plotTraces = [];
+
+            // Group data by TechnologyCategory
+            const groupedData = dataFiltered.reduce((acc, item) => {
+                const category = item.TechnologyCategory || 'Others'; // Default to 'Others' if category is null
+                if (!acc[category]) {
+                    acc[category] = [];
+                }
+                acc[category].push(item);
+                return acc;
+            }, {});
+
+            // Create a trace for each category
+            for (const category in categoryColors) {
+                const subset = groupedData[category] || []; // Ensure subset exists
+                if (subset.length > 0) {
+                    plotTraces.push({
+                        x: subset.map(d => d.Power),
+                        y: subset.map(d => d.PeakPerformance),
+                        mode: 'markers', // Only markers, tooltips will show product names
+                        type: 'scatter',
+                        name: category,
+                        marker: {
+                            size: 10,
+                            color: categoryColors[category],
+                            line: {
+                                color: 'rgba(0, 0, 0, 0.5)',
+                                width: 1
+                            }
+                        },
+                        // Custom hover text to show product name
+                        text: subset.map(d => d.Product),
+                        hoverinfo: 'x+y+text', // Show Power, Performance, and Product on hover
+                        hovertemplate: '<b>Product:</b> %{text}<br><b>Power:</b> %{x} W<br><b>Performance:</b> %{y} Op/s<extra></extra>'
+                    });
+                }
+            }
+
+            // Add diagonal lines for Ops/W ratio
+            // Ratios from 1 TOP/W ($10^12$ Ops/W) upwards
+            const opsPerWattRatios = [1e9,1e10,1e11, 1e12, 1e13, 1e14]; // 1 TOP/W, 10 TOP/W, 100 TOP/W, etc.
+
+            // Helper function to format ratio labels
+            function formatRatioLabel(ratio) {
+                if (ratio >= 1e12) {
+                    return `${ratio / 1e12} TOP/W`;
+                }
+                return `${ratio} Ops/W`; // Fallback, though we're filtering for TOP/W
+            }
+
+            opsPerWattRatios.forEach(ratio => {
+                // Generate points for the diagonal lines within the calculated axis limits
+                const lineX = [];
+                // Start from the calculated min power and go up to max power
+                for (let p = Math.pow(10, xMin); p <= Math.pow(10, xMax); p *= 1.1) {
+                    lineX.push(p);
+                }
+                lineX.push(Math.pow(10, xMax)); // Ensure the max value is included
+
+                const lineY = lineX.map(power => power * ratio);
+
+                // Filter points to be within the y-axis range
+                const filteredLineX = [];
+                const filteredLineY = [];
+                for (let i = 0; i < lineX.length; i++) {
+                    if (lineY[i] >= Math.pow(10, yMin) && lineY[i] <= Math.pow(10, yMax)) {
+                        filteredLineX.push(lineX[i]);
+                        filteredLineY.push(lineY[i]);
+                    }
+                }
+
+                // Only add trace if there are points within the visible range
+                if (filteredLineX.length > 1) { // Need at least two points to draw a line
+                    plotTraces.push({
+                        x: filteredLineX,
+                        y: filteredLineY,
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: formatRatioLabel(ratio),
+                        line: {
+                            color: 'rgba(128, 128, 128, 0.5)', // Gray, semi-transparent
+                            dash: 'dash', // Dashed line
+                            width: 1
+                        },
+                        hoverinfo: 'skip', // No hover info for these lines
+                        showlegend: false // Do not show these lines in the legend
+                    });
+                }
+            });
+
+
+            const layout = {
+                xaxis: {
+                    title: {
+                        text: 'Peak Power (W)',
+                        font: { size: 14 }
+                    },
+                    type: 'log',
+                    range: [xMin, xMax], // Set the calculated range
+                    gridcolor: '#e2e8f0',
+                    linecolor: '#cbd5e1',
+                    linewidth: 1
+                },
+                yaxis: {
+                    title: {
+                        text: 'Peak Performance (Op/s)',
+                        font: { size: 14 }
+                    },
+                    type: 'log',
+                    range: [yMin, yMax], // Set the calculated range
+                    gridcolor: '#e2e8f0',
+                    linecolor: '#cbd5e1',
+                    linewidth: 1
+                },
+                title: {
+                    text: 'Peak Performance vs. Power of Hardware for AI by CPU, GPU, and Others',
+                    font: { size: 18, color: '#333' },
+                    x: 0.5, // Center the title
+                    xanchor: 'center'
+                },
+                hovermode: 'closest', // Show hover info for the closest point
+                legend: {
+                    orientation: 'h', // Horizontal legend
+                    yanchor: 'bottom',
+                    y: 1.02,
+                    xanchor: 'right',
+                    x: 1,
+                    bgcolor: 'rgba(255, 255, 255, 0.8)',
+                    bordercolor: '#ccc',
+                    borderwidth: 1,
+                    font: { size: 12 }
+                },
+                margin: {
+                    l: 80, // left margin
+                    r: 50, // right margin
+                    b: 80, // bottom margin
+                    t: 100, // top margin
+                    pad: 4
+                },
+                paper_bgcolor: '#ffffff',
+                plot_bgcolor: '#ffffff',
+                font: {
+                    family: 'Inter, sans-serif',
+                    color: '#333'
+                },
+                // Responsive layout settings
+                autosize: true
+            };
+
+            // Remove loading message and show plot
+            loadingMessage.classList.add('hidden');
+            plotDiv.classList.remove('hidden');
+
+            Plotly.newPlot('plot', plotTraces, layout, {
+                responsive: true, // Make the plot responsive to window resizing
+                displayModeBar: true, // Show Plotly's mode bar (zoom, pan, etc.)
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'] // Remove less common buttons
+            });
+        }
+
+        // Call the function to create the plot when the window loads
+        window.onload = createPlot;
+    </script>
+</body>
+</html>
