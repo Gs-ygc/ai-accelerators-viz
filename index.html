@@ -94,10 +94,10 @@
 
         // Function to categorize technologies
         function categorizeTechnology(tech) {
-            if (tech === null || tech === undefined || tech.trim() === '') {
+            if (tech === null || tech === undefined || String(tech).trim() === '') {
                 return null; // Return null for missing or empty values
             }
-            const lowerTech = tech.toLowerCase();
+            const lowerTech = String(tech).toLowerCase();
             if (lowerTech.includes('cpu') || lowerTech.includes('multicore') || lowerTech.includes('manycore')) {
                 return 'CPU';
             } else if (lowerTech.includes('gpu')) {
@@ -108,6 +108,32 @@
                 return 'Others';
             }
         }
+
+        // Function to categorize precision
+        function categorizePrecision(prec) {
+            if (prec === null || prec === undefined || String(prec).trim() === '') {
+                return 'Other';
+            }
+            const lowerPrec = String(prec).toLowerCase();
+            if (lowerPrec.includes('fp32')) return 'FP32';
+            if (lowerPrec.includes('fp16')) return 'FP16';
+            if (lowerPrec.includes('int8')) return 'INT8';
+            if (lowerPrec.includes('bf16')) return 'BF16';
+            if (lowerPrec.includes('tf32')) return 'TF32';
+            if (lowerPrec.includes('mixed')) return 'Mixed';
+            return 'Other';
+        }
+
+        // Define precision symbols mapping
+        const precisionSymbols = {
+            'FP32': 'circle',
+            'FP16': 'square',
+            'INT8': 'diamond',
+            'BF16': 'cross',
+            'TF32': 'triangle-up',
+            'Mixed': 'x',
+            'Other': 'star'
+        };
 
         // Function to fetch and process all CSV files
         async function loadAndProcessData() {
@@ -133,7 +159,8 @@
                         ...row,
                         Power: isNaN(power) ? null : power,
                         PeakPerformance: isNaN(peakPerformance) ? null : peakPerformance,
-                        TechnologyCategory: categorizeTechnology(row.Technology)
+                        TechnologyCategory: categorizeTechnology(row.Technology),
+                        PrecisionCategory: categorizePrecision(row.Precision) // Add categorized precision
                     };
                 }).filter(row =>
                     row.PeakPerformance !== null && row.Power !== null && row.PeakPerformance > 1000
@@ -188,66 +215,117 @@
 
             const plotTraces = [];
 
-            // Group data by TechnologyCategory
-            const groupedData = dataFiltered.reduce((acc, item) => {
-                const category = item.TechnologyCategory || 'Others'; // Default to 'Others' if category is null
-                if (!acc[category]) {
-                    acc[category] = [];
-                }
-                acc[category].push(item);
-                return acc;
-            }, {});
+            // Get unique categories and precisions
+            const uniqueTechnologyCategories = [...new Set(dataFiltered.map(d => d.TechnologyCategory))].filter(Boolean).sort();
+            const uniquePrecisions = [...new Set(dataFiltered.map(d => d.PrecisionCategory))].filter(Boolean).sort((a, b) => {
+                // Custom sort for precisions for consistent legend order
+                const order = ['FP32', 'FP16', 'BF16', 'INT8', 'TF32', 'Mixed', 'Other'];
+                return order.indexOf(a) - order.indexOf(b);
+            });
 
-            // Create a trace for each category
-            for (const category in categoryColors) {
-                const subset = groupedData[category] || []; // Ensure subset exists
-                if (subset.length > 0) {
-                    plotTraces.push({
-                        x: subset.map(d => d.Power),
-                        y: subset.map(d => d.PeakPerformance),
-                        mode: 'markers', // Only markers, tooltips will show product names
-                        type: 'scatter',
-                        name: category,
-                        marker: {
-                            size: 10,
-                            color: categoryColors[category],
-                            line: {
-                                color: 'rgba(0, 0, 0, 0.5)',
-                                width: 1
-                            }
-                        },
-                        // Custom hover text to show product name
-                        text: subset.map(d => d.Product),
-                        hoverinfo: 'x+y+text', // Show Power, Performance, and Product on hover
-                        hovertemplate: '<b>Product:</b> %{text}<br><b>Power:</b> %{x} W<br><b>Performance:</b> %{y} Op/s<extra></extra>'
-                    });
+            // Create a trace for each combination of TechnologyCategory and Precision
+            for (const category of uniqueTechnologyCategories) {
+                for (const precision of uniquePrecisions) {
+                    const subset = dataFiltered.filter(d =>
+                        d.TechnologyCategory === category && d.PrecisionCategory === precision
+                    );
+
+                    if (subset.length > 0) {
+                        plotTraces.push({
+                            x: subset.map(d => d.Power),
+                            y: subset.map(d => d.PeakPerformance),
+                            mode: 'markers',
+                            type: 'scatter',
+                            name: `${category} - ${precision}`, // Combined name for legend
+                            marker: {
+                                size: 10,
+                                color: categoryColors[category], // Color by TechnologyCategory
+                                symbol: precisionSymbols[precision] || 'circle', // Shape by Precision, default to circle
+                                line: {
+                                    color: 'rgba(0, 0, 0, 0.5)',
+                                    width: 1
+                                }
+                            },
+                            // Custom hover text to show product name, company, and precision
+                            text: subset.map(d => {
+                                const info = {};
+                                if (d.Product) info.Product = d.Product;
+                                if (d.Company) info.Company = d.Company;
+                                if (d.PeakPerformance) info.PeakPerformance = d.PeakPerformance;
+                                if (d.Precision) info.Precision = d.Precision;
+                                if (d.Power) info.Power = d.Power;
+                                if (d.Technology) info.Technology = d.Technology;
+                                if (d.IorT) info.IorT = d.IorT;
+                                if (d.FormFactor) info.FormFactor = d.FormFactor;
+                                if (d.PlotLocation) info.PlotLocation = d.PlotLocation;
+                                if (d.Hide) info.Hide = d.Hide;
+                                if (d.Updated) info.Updated = d.Updated;
+                                if (d.Notes && d.Notes.trim() !== '') info.Notes = d.Notes;
+                                if (d.ReferenceURL) info.ReferenceURL = d.ReferenceURL;
+                                if (d.Reference) info.Reference = d.Reference;
+                                info.Notes = (d.Notes && d.Notes.trim() !== '') ? `<b>Notes:</b> ${d.Notes}` : '';
+                                // Format PeakPerformance to readable units, including larger scales
+                                if (d.PeakPerformance) {
+                                    const val = Number(d.PeakPerformance);
+                                    if (val >= 1e18) {
+                                        info.PeakPerformanceReadable = (val / 1e18).toFixed(2) + ' EOP/s'; // Exa
+                                    } else if (val >= 1e15) {
+                                        info.PeakPerformanceReadable = (val / 1e15).toFixed(2) + ' POP/s'; // Peta
+                                    } else if (val >= 1e12) {
+                                        info.PeakPerformanceReadable = (val / 1e12).toFixed(2) + ' TOP/s'; // Tera
+                                    } else if (val >= 1e9) {
+                                        info.PeakPerformanceReadable = (val / 1e9).toFixed(2) + ' GOP/s'; // Giga
+                                    } else if (val >= 1e6) {
+                                        info.PeakPerformanceReadable = (val / 1e6).toFixed(2) + ' MOP/s'; // Mega
+                                    } else if (val >= 1e3) {
+                                        info.PeakPerformanceReadable = (val / 1e3).toFixed(2) + ' KOP/s'; // Kilo
+                                    } else {
+                                        info.PeakPerformanceReadable = val + ' OP/s';
+                                    }
+                                }
+                                return info;
+                            }),
+                            hoverinfo: 'text',
+                            hovertemplate:
+                                [
+                                    '<b>Product:</b> %{text.Product}',
+                                    '<b>Company:</b> %{text.Company}',
+                                    '<b>Peak Performance:</b> %{text.PeakPerformanceReadable}',
+                                    '<b>Precision:</b> %{text.Precision}',
+                                    '<b>Power:</b> %{text.Power} W',
+                                    '%{text.Notes}',
+                                    '<a href="%{text.ReferenceURL}" target="_blank">Reference</a>'
+                                ]
+                                .filter(line => line !== '')
+                                .join('<br>') +
+                                '<extra></extra>'
+                        });
+                    }
                 }
             }
 
             // Add diagonal lines for Ops/W ratio
-            // Ratios from 1 TOP/W ($10^12$ Ops/W) upwards
             const opsPerWattRatios = [1e9,1e10,1e11, 1e12, 1e13, 1e14]; // 1 TOP/W, 10 TOP/W, 100 TOP/W, etc.
 
             // Helper function to format ratio labels
             function formatRatioLabel(ratio) {
                 if (ratio >= 1e12) {
                     return `${ratio / 1e12} TOP/W`;
+                } else if (ratio >= 1e9) {
+                    return `${ratio / 1e9} GOP/W`; // GigaOps/W
                 }
-                return `${ratio} Ops/W`; // Fallback, though we're filtering for TOP/W
+                return `${ratio} Ops/W`;
             }
 
             opsPerWattRatios.forEach(ratio => {
-                // Generate points for the diagonal lines within the calculated axis limits
                 const lineX = [];
-                // Start from the calculated min power and go up to max power
                 for (let p = Math.pow(10, xMin); p <= Math.pow(10, xMax); p *= 1.1) {
                     lineX.push(p);
                 }
-                lineX.push(Math.pow(10, xMax)); // Ensure the max value is included
+                lineX.push(Math.pow(10, xMax));
 
                 const lineY = lineX.map(power => power * ratio);
 
-                // Filter points to be within the y-axis range
                 const filteredLineX = [];
                 const filteredLineY = [];
                 for (let i = 0; i < lineX.length; i++) {
@@ -257,8 +335,7 @@
                     }
                 }
 
-                // Only add trace if there are points within the visible range
-                if (filteredLineX.length > 1) { // Need at least two points to draw a line
+                if (filteredLineX.length > 1) {
                     plotTraces.push({
                         x: filteredLineX,
                         y: filteredLineY,
@@ -266,12 +343,12 @@
                         type: 'scatter',
                         name: formatRatioLabel(ratio),
                         line: {
-                            color: 'rgba(128, 128, 128, 0.5)', // Gray, semi-transparent
-                            dash: 'dash', // Dashed line
+                            color: 'rgba(128, 128, 128, 0.5)',
+                            dash: 'dash',
                             width: 1
                         },
-                        hoverinfo: 'skip', // No hover info for these lines
-                        showlegend: false // Do not show these lines in the legend
+                        hoverinfo: 'skip',
+                        showlegend: false
                     });
                 }
             });
@@ -284,7 +361,7 @@
                         font: { size: 14 }
                     },
                     type: 'log',
-                    range: [xMin, xMax], // Set the calculated range
+                    range: [xMin, xMax],
                     gridcolor: '#e2e8f0',
                     linecolor: '#cbd5e1',
                     linewidth: 1
@@ -295,7 +372,7 @@
                         font: { size: 14 }
                     },
                     type: 'log',
-                    range: [yMin, yMax], // Set the calculated range
+                    range: [yMin, yMax],
                     gridcolor: '#e2e8f0',
                     linecolor: '#cbd5e1',
                     linewidth: 1
@@ -303,10 +380,10 @@
                 title: {
                     text: 'Peak Performance vs. Power of Hardware for AI by CPU, GPU, and Others',
                     font: { size: 18, color: '#333' },
-                    x: 0.5, // Center the title
+                    x: 0.5,
                     xanchor: 'center'
                 },
-                hovermode: 'closest', // Show hover info for the closest point
+                hovermode: 'closest',
                 legend: {
                     orientation: 'h', // Horizontal legend
                     yanchor: 'bottom',
@@ -316,13 +393,13 @@
                     bgcolor: 'rgba(255, 255, 255, 0.8)',
                     bordercolor: '#ccc',
                     borderwidth: 1,
-                    font: { size: 12 }
+                    font: { size: 10 } // Slightly smaller font for potentially more entries
                 },
                 margin: {
-                    l: 80, // left margin
-                    r: 50, // right margin
-                    b: 80, // bottom margin
-                    t: 100, // top margin
+                    l: 80,
+                    r: 50,
+                    b: 80,
+                    t: 100,
                     pad: 4
                 },
                 paper_bgcolor: '#ffffff',
@@ -331,22 +408,33 @@
                     family: 'Inter, sans-serif',
                     color: '#333'
                 },
-                // Responsive layout settings
                 autosize: true
             };
 
-            // Remove loading message and show plot
             loadingMessage.classList.add('hidden');
             plotDiv.classList.remove('hidden');
 
             Plotly.newPlot('plot', plotTraces, layout, {
-                responsive: true, // Make the plot responsive to window resizing
-                displayModeBar: true, // Show Plotly's mode bar (zoom, pan, etc.)
-                modeBarButtonsToRemove: ['lasso2d', 'select2d'] // Remove less common buttons
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            });
+
+            // Add click event listener to the plot
+            plotDiv.on('plotly_click', function(data) {
+                if (data.points.length > 0) {
+                    const point = data.points[0];
+                    const referenceURL = point.text.ReferenceURL; // Access the ReferenceURL from the custom text object
+
+                    if (referenceURL && referenceURL.startsWith('http')) { // Ensure it's a valid URL
+                        window.open(referenceURL, '_blank'); // Open in a new tab
+                    } else {
+                        console.warn("No valid ReferenceURL found for the clicked point:", point);
+                    }
+                }
             });
         }
 
-        // Call the function to create the plot when the window loads
         window.onload = createPlot;
     </script>
 </body>
