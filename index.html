@@ -134,6 +134,12 @@
             'Mixed': 'x',
             'Other': 'star'
         };
+        
+        // Function to extract year from filename
+        function extractYearFromFileName(fileName) {
+            const match = fileName.match(/(\d{4})\.csv$/);
+            return match ? match[1] : 'N/A';
+        }
 
         // Function to fetch and process all CSV files
         async function loadAndProcessData() {
@@ -146,6 +152,11 @@
                     }
                     const csvText = await response.text();
                     const parsedData = d3.csvParse(csvText);
+                    const fileName = path.substring(path.lastIndexOf('/') + 1);
+                    const year = extractYearFromFileName(fileName);
+                    parsedData.forEach(row => {
+                        row.Year = year; // Add the year to each row
+                    });
                     allData.push(...parsedData);
                 }
 
@@ -249,6 +260,7 @@
                             // Custom hover text to show product name, company, and precision
                             text: subset.map(d => {
                                 const info = {};
+                                if (d.Year) info.Year = d.Year;
                                 if (d.Product) info.Product = d.Product;
                                 if (d.Company) info.Company = d.Company;
                                 if (d.PeakPerformance) info.PeakPerformance = d.PeakPerformance;
@@ -283,12 +295,13 @@
                                         info.PeakPerformanceReadable = val + ' OP/s';
                                     }
                                 }
+                                
                                 return info;
                             }),
                             hoverinfo: 'text',
                             hovertemplate:
                                 [
-                                    '<b>Product:</b> %{text.Product}',
+                                    '<b>Product:</b> %{text.Product} (%{text.Year})',
                                     '<b>Company:</b> %{text.Company}',
                                     '<b>Peak Performance:</b> %{text.PeakPerformanceReadable}',
                                     '<b>Precision:</b> %{text.Precision}',
