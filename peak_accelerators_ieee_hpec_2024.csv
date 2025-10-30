@@ -1,1 +1,4 @@
-﻿Company,Product,Label,PeakPerformance,Precision,Power,Technology,IorT,FormFactor,PlotLocation,Hide,AI Model,Updated,Notes,ReferenceURL,Reference
+﻿Company,Product,Label,PeakPerformance,Precision,Power,Technology,IorT,FormFactor,PlotLocation,Hide,PlotLocationZ,HideZ,Updated,Notes,ReferenceURL,Reference
+T-Head Semiconductor,Xuantie C930,T-Head,8.00E+12,int8,5,multicore,inference,Chip,SW,,SW,,6/12/20,,,thead2020xuantie
+Qualcomm,Hexagon NPU,Qualcomm,5.00E+13,int8,10,dataflow,inference,Chip,SW,,SW,,6/12/20,,,qualcomm2023hexagon
+Apple,Neural Engine (M2),Apple,1.58E+13,int8,10,dataflow,inference,Chip,SW,,SW,,6/12/20,,,apple2020neural
